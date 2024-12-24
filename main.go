@@ -1,8 +1,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"github.com/russross/blackfriday"
+	"github.com/russross/blackfriday/v2"
 	"html/template"
 	"io/ioutil"
 	"net/http"
@@ -12,25 +13,34 @@ import (
 )
 
 func main() {
+	buildCmd := flag.NewFlagSet("build", flag.ExitOnError)
+	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
+
+	buildInputDir := buildCmd.String("input", "content", "Directory containing Markdown files")
+	buildOutputDir := buildCmd.String("output", "public", "Directory to save HTML files")
+	servePort := serveCmd.String("port", "8080", "Port for the HTTP server")
+
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: static-pages-generator dashboard-template.md")
+		fmt.Println("Usage: static-pages-generator [build|serve] [options]")
 		os.Exit(1)
 	}
+
 	switch os.Args[1] {
 	case "build":
-		build()
+		buildCmd.Parse(os.Args[2:])
+		build(*buildInputDir, *buildOutputDir)
 	case "serve":
-		serve()
+		serveCmd.Parse(os.Args[2:])
+		serve(*servePort)
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
+		fmt.Println("Usage: static-pages-generator [build|serve] [options]")
 		os.Exit(1)
 	}
 }
 
-func build() {
-	inputDir := "content"
-	outputDir := "public"
-
+func build(inputDir, outputDir string) {
+	fmt.Printf("Building from %s to %s\n", inputDir, outputDir)
 	err := filepath.Walk(inputDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -44,7 +54,7 @@ func build() {
 			return err
 		}
 
-		html := blackfriday.MarkdownCommon(data)
+		html := blackfriday.Run(data)
 		outputPath := filepath.Join(outputDir, strings.Replace(info.Name(), ".md", ".html", 1))
 		err = os.MkdirAll(filepath.Dir(outputPath), os.ModePerm)
 		if err != nil {
@@ -73,18 +83,19 @@ func build() {
 	})
 
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Printf("Error during build: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Println("Build complete.")
 }
 
-func serve() {
+func serve(port string) {
 	fs := http.FileServer(http.Dir("public"))
 	http.Handle("/", fs)
-	fmt.Println("Serving on :8080")
+	fmt.Printf("Serving on :%s\n", port)
 
 	server := &http.Server{
-		Addr: ":8080",
+		Addr: ":" + port,
 	}
 
 	err := server.ListenAndServe()
